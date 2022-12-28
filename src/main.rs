@@ -1,67 +1,88 @@
 #![cfg(test)]
 #![warn(clippy::all, clippy::pedantic, unsafe_code)]
 
-use std::{fs};
+use std::{fs, collections::{HashMap, VecDeque, HashSet}, char, cell::RefCell, rc::Rc, borrow::Borrow};
 
 fn main() {
     println!("Hello, world!");
-
-}
-#[derive(Debug, Clone)]
-struct Monkey {
-  items: Vec<u32>,
-  operation: Vec<String>,
-  division_test: u32,
-  true_target: u8,
-  false_target: u8,
-  identifier: u8,
-  interactions: u32
 }
 
-impl Monkey {
-  fn build(identifier: u8) -> Monkey {
-    Monkey {
-      items: Vec::new(),
-      operation: Vec::new(),
-      division_test: 0,
-      true_target: 0,
-      false_target: 0,
-      identifier: identifier,
-      interactions: 0
-    }
-  }
-}
+type NodeRef = Rc<RefCell<Node>>;
 
 #[derive(Debug, Clone)]
-struct MonkeyList {
-  monkeys: Vec<Monkey>
+pub struct Node {
+  pub id: u32,
+  pub value: char,
+  pub height: u32,
+  pub adjacency_list: Vec<Option<NodeRef>>,
+  pub neighbors: Vec<u32>,
+  pub visited: bool
 }
 
-impl MonkeyList {
-  fn build() -> MonkeyList {
-    MonkeyList {
-      monkeys: Vec::<Monkey>::new()
+impl Node {
+  fn new(id: u32, value: char, neighbors: Vec<u32>) -> Node {
+    Node {
+      id,
+      value,
+      height: Self::get_height(value),
+      adjacency_list: Vec::new(),
+      neighbors,
+      visited: false
     }
   }
 
-  fn add_monkey(&mut self, monkey: Monkey) {
-    self.monkeys.push(monkey);
+  fn get_height(char: char) -> u32 {
+    match char {
+      'a'..='z' => { char as u32 - 97 },
+      'S' => { 0 },
+      'E' => { 25 },
+      _ => { panic!("Character couldn't be mapped to a height value")}
+    }
   }
 }
 
 #[derive(Debug)]
 struct Solution {
     file: &'static str,
-    monkeys: MonkeyList
+    nodes: HashMap<u32, Node>,
+    height: u32,
+    width: u32
 }
 
 impl Solution {
-
-    fn origin(file: &'static str) -> Solution {
+    fn new(file: &'static str, height: u32, width: u32) -> Solution {
         Solution {
             file,
-            monkeys: MonkeyList::build(),
+            nodes: HashMap::new(),
+            height,
+            width
         }
+    }
+
+    fn get_neighbors(&self, index: u32) -> Vec<u32> {
+      let mut neighbors = Vec::new();
+
+      // left
+      if index % self.width != 0 {
+        neighbors.push(index - 1);
+      }
+
+      // right
+      if index % self.width != self.width - 1 {
+        neighbors.push(index + 1);
+      }
+
+      // up
+      if index >= self.width {
+        neighbors.push(index - self.width);
+      }
+
+      // down
+      if index <= (self.width * self.height) - self.width {
+        neighbors.push(index + self.width);
+      }
+
+      neighbors
     }
 
     fn solve(&mut self, file: &str) -> u32 {
@@ -69,129 +90,97 @@ impl Solution {
             .expect("Should have been able to read the file");
 
         let lines = contents.lines();
-
-        let mut monkey_identifier = 0;
-        let mut monkey = Monkey::build(monkey_identifier);
-
+        let mut input = String::from("");
         for line in lines {
-            let mut instructions = line.split_whitespace();
-            let first_instruction = instructions.next();
-            if first_instruction.is_some() {
-              let value = first_instruction.expect("No instruction");
-              match value {
-                "Monkey" => {
-                  monkey = Monkey::build(monkey_identifier);
-                  monkey_identifier += 1;
-                },
-                "Starting" => {
-                  instructions.next().expect("Nothing to throw away");
-                  for item_str in instructions {
-                    if item_str.ends_with(",") {
-                      let item_num = &item_str[0..item_str.len() - 1];
-                      let item = item_num.parse().expect("Unable to convert to integer");
-                      monkey.items.push(item);
-                    } else {
-                      let item = item_str.parse().expect("Unable to convert string to integer");
-                      monkey.items.push(item);
-                    }
-                  }
-                },
-                "Operation:" => {
-                  instructions.next().expect("Nothing to throw away");
-                  instructions.next().expect("Nothing to throw away");
-                  for item_str in instructions {
-                    monkey.operation.push(String::from(item_str));
-                  }
-                },
-                "Test:" => {
-                  let test_value = instructions.last().expect("Unable to find the last value");
-                  monkey.division_test = test_value.parse().expect("Unable to parse division test value");
-                },
-                "If" => {
-                  let second_instruction = instructions.next().expect("No instruction found");
-                  match second_instruction {
-                    "true:" => {
-                      let target = instructions.last().expect("Unable to find the last value");
-                      monkey.true_target = target.parse().expect("Unable to parse true target");
-                    },
-                    "false:" => {
-                      let target = instructions.last().expect("Unable to find the last value");
-                      monkey.false_target = target.parse().expect("Unable to parse true target");
-                    },
-                    _ => {}
-                  }
-                }
-                _ => {}
-              }
-            } else {
-              println!("Added monkey: {:?}", monkey);
-              self.monkeys.add_monkey(monkey.clone());
-            }
+          input.push_str(line);
         }
 
-        println!("Added monkey: {:?}", monkey);
-        self.monkeys.add_monkey(monkey.clone());
+        let mut index = 0;
+        for char in input.chars() {
+          let neighbors = self.get_neighbors(index);
+          let node = Node::new(index, char, neighbors);
+          self.nodes.insert(index, node);
+          index += 1;
+        }
 
-        let mut monkes = Self::take_turns(self.monkeys.monkeys.clone(), 20);
-        monkes.sort_by(|a, b| b.interactions.cmp(&a.interactions));
-        println!("{:?}", monkes);
+        let start = self.nodes.get_key_value(&0);
 
-        monkes[0].interactions * monkes[1].interactions
+
+        println!("{:?}", self.nodes);
+        0
     }
 
-    fn take_turns(mut monkeys: Vec<Monkey>, rounds: usize) -> Vec<Monkey> {
-      for _ in 0..rounds {
-        for monkey_index in 0..monkeys.len() {
-          let monkey = &mut monkeys[monkey_index];
-          println!("Monkey {}:", monkey.identifier);
-          let items: Vec<_> = monkey.items
-            .drain(..)
-            .map(|item| {
-              println!("  Monkey inspects an item with a worry level of {}.", item);
+    // fn traverse(nodes: HashMap<u32, NodeRef>, node: NodeRef, distance: u32) -> usize {
+    //   let mut visited = HashSet::new();
+    //   let mut queue = Vec::new();
+    //   queue.push(node);
 
-              let mut worry_level = item;
-              let left_operation = monkey.operation.get(0).expect("No left hand operation");
-              let mut left = worry_level;
-              if left_operation != "old" { left = left_operation.parse().expect("Unable to parse left hand value") }
+    //   while let has_node = queue.pop().is_some() {
+    //     let cur_node = queue.pop().expect("Unable to find node");
+    //     if visited.contains(&Rc::as_ptr(&node)) {
+    //       continue
+    //     }
 
-              let right_operation = monkey.operation.get(2).expect("No left hand operation");
-              let mut right = worry_level;
-              if right_operation != "old" { right = right_operation.parse().expect("Unable to parse left hand value") }
+    //     visited.insert(Rc::as_ptr(&node));
 
-              let operator = monkey.operation.get(1).expect("No operator found");
-              match operator.as_str() {
-                "*" => { worry_level = left * right },
-                "+" => { worry_level = left + right },
-                _ => {}
-              }
-              println!("    Worry level is now {}", worry_level);
+    //     if cur_node.,borvalue == 'E' {
+    //       return visited.len()
+    //     }
 
-              worry_level = worry_level / 3;
-              println!("    Monkey gets bored with item. Worry level is divided by 3 to {}.", worry_level);
-              monkey.interactions += 1;
-              let mut target: usize = 0;
-              if worry_level % monkey.division_test == 0 {
-                println!("    Current worry level is divisible by {}.", monkey.division_test);
-                target = monkey.true_target as usize;
-              } else {
-                println!("    Current worry level is not divisible by {}.", monkey.division_test);
-                target = monkey.false_target as usize;
-
-              }
-              (worry_level, target)
-            })
-            .collect();
+    //     let neighbors = node.borrow().neighbors;
+    //     for id in neighbors {
+    //       let neighbor = nodes.get(&id).expect("Expected a neighbor but found none");
+    //       queue.push(Rc::clone(neighbor));
+    //     }
+    //   }
 
 
-          for (item, target) in items {
-            println!("    Item with worry level {item} is thrown to monkey {}.", target);
-            monkeys[target].items.push(item);
-          }
-        }
+
+      // node.visited = true;
+      // for neighbor in &node.neighbors {
+      //   let neighbor_node = self.nodes.get_mut(neighbor).expect("Unable to find node with given index");
+
+      //   if neighbor_node.value == 'E' { return 1 }
+
+      //   let should_traverse = neighbor_node.height <= node.height + 1 && !neighbor_node.visited;
+      //   if should_traverse { return self.traverse(&mut neighbor_node.borrow().as_ref()) + 1}
+
+      // }
+
+    //   0
+    // }
+}
+
+pub fn dfs_with_visited(root: NodeRef, target: i32) -> Option<NodeRef> {
+  let mut visited = HashSet::new();
+  let mut queue: Vec<NodeRef> = Vec::new();
+  queue.push(root);
+
+  while !queue.is_empty() {
+      let node = queue.pop().expect("Unable to find node");
+
+      if visited.contains(&Rc::as_ptr(&node)) {
+          continue;
       }
-      monkeys
+
+      visited.insert(Rc::as_ptr(&node));
+
+      if node.borrow().val == target {
+          // return Some(node);
+      }
+
+      let items = node.borrow();
+
+      // if let Some(left) = &items.left {
+      //     queue.push(Rc::clone(left));
+      // }
+
+      // if let Some(right) = &items.right {
+      //     queue.push(Rc::clone(right));
+      // }
   }
 
+  None
 }
 
 #[cfg(test)]
@@ -199,17 +188,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_get_height() {
+      assert_eq!(Node::get_height('a'), 0);
+      assert_eq!(Node::get_height('S'), 0);
+      assert_eq!(Node::get_height('E'), 25);
+      assert_eq!(Node::get_height('y'), 24);
+      assert_eq!(Node::get_height('j'), 9);
+    }
+
+    #[test]
     fn test_input() {
-        let mut solution = Solution::origin("src/test-case-input.txt");
+        let mut solution = Solution::new("src/test-case-input.txt", 5, 8);
         let answer = solution.solve(solution.file);
-        assert_eq!(solution.monkeys.monkeys.len(), 4);
-        assert_eq!(answer, 10605);
+        assert_eq!(answer, 31);
     }
 
     #[test]
     fn test_solution() {
 
-        let mut solution = Solution::origin("src/input.txt");
+        let mut solution = Solution::new("src/input.txt", 41, 161);
         let answer = solution.solve(solution.file);
         println!("{answer}")
     }
